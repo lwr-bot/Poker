@@ -4,6 +4,8 @@
 #include <muduo/net/TcpConnection.h>
 #include <unordered_map>
 #include <functional>
+#include "usermodel.hpp"
+
 using namespace muduo;
 using namespace muduo::net;
 using namespace std;
@@ -17,7 +19,7 @@ using MsgHandler = std::function<void(const TcpConnectionPtr&, json&, Timestamp)
 
 class GameServerService{
 public: 
-    static GameServerService* instance();
+    static GameServerService* getinstance();
 
     void login(const TcpConnectionPtr& conn, json& js, Timestamp time);
 
@@ -25,10 +27,11 @@ public:
 
     MsgHandler getHandler(int msgid);
 private:
-
     GameServerService();
 
     unordered_map<int, MsgHandler> _msgHandlerMap;
+
+    usermodel _userModel;
 };
 
 #endif

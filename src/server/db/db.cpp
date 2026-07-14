@@ -3,7 +3,7 @@
 
 
 static string server = "localhost";
-static string user = "root";
+static string user = "mainuser";
 static string password = "123456"; 
 static string dbname = "poker";
 
@@ -22,11 +22,14 @@ bool MySQL::connect(){
     MYSQL *p = mysql_real_connect(_conn, server.c_str(), user.c_str(), password.c_str(), dbname.c_str(), 3306, nullptr, 0);
     if(p != nullptr){
         mysql_query(_conn, "set names utf8");
+        LOG_INFO << "connect mysql success!";
         return true;
     }else{
+        LOG_INFO << "connect mysql failed!";
         return false;
     }
 }
+
 
 bool MySQL::update(string sql){
     if(mysql_query(_conn, sql.c_str())){
@@ -43,3 +46,5 @@ MYSQL_RES* MySQL::query(string sql){
     }
     return mysql_store_result(_conn);
 }
+
+MYSQL* MySQL::getConnection(){ return _conn; }

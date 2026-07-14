@@ -1,5 +1,6 @@
 #include "GameServerService.hpp"
 #include "public.hpp"
+
 #include <string>
 #include <muduo/base/Logging.h>
 #include <iostream>
@@ -7,7 +8,7 @@ using namespace std;
 using namespace muduo;
 
 
-GameServerService* GameServerService::instance()
+GameServerService* GameServerService::getinstance()
 {
     static GameServerService service;
     return &service;
@@ -35,11 +36,59 @@ MsgHandler GameServerService::getHandler(int msgid)
 
 void GameServerService::login(const TcpConnectionPtr& conn, json& js, Timestamp time)
 {
-    cout << "login service" << endl;
+   int id = js["id"].get<int>();
+   string password = js["password"];
+   User user = _userModel.query(id);
+   if(user.getId() == id && user.getPassword() == password){
+        if(user.getState() == "online"){
+            json response;
+            response["msgid"] = LOGIN_MSG_ACK;
+            response["errno"] = 2;
+            response["errmsg"] = "该账号已经登录，请重新输入";
+            conn->send(response.dump());
+            return;
+        }else{
+            user.setState("online");
+            _userModel.updateState(user);
+
+            json response;
+            response["msgid"] = LOGIN_MSG_ACK;
+            response["errno"] = 0;
+            response["name"] = user.getName();
+            conn->send(response.dump());
+        }  
+    }else{
+        json response;
+        response["msgid"] = LOGIN_MSG_ACK;
+        response["errno"] = 1;
+        response["errmsg"] = "用户名或密码错误";
+        conn->send(response.dump());
+    }
 }
+
 
 void GameServerService::reg(const TcpConnectionPtr& conn, json& js, Timestamp time)
 {
-    cout << "reg service" << endl;
+    string name = js["name"];
+    string password = js["password"];
+    User user;
+    user.setName(name);
+    user.setPassword(password);
+
+    bool state = _userModel.insert(user);
+    if(state){
+        json response;
+        response["id"] = user.getId();
+        response["errno"] = 0;
+        response["msgid"] = REG_MSG_ACK;
+        conn->send(response.dump());
+    }else{
+        json response;
+        response["msgid"] = REG_MSG_ACK;
+        response["errno"] = 1;
+        response["errmsg"] = "注册失败";
+        conn->send(response.dump()); 
+    }
+
 }
 

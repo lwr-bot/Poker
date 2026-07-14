@@ -49,7 +49,7 @@ void GameServer::onMessage(const TcpConnectionPtr &conn, Buffer *buffer, Timesta
     string buf = buffer->retrieveAllAsString();
 
     json js = json::parse(buf);
-    auto msghandler = GameServerService::instance()->getHandler(js["msgid"].get<int>());
+    auto msghandler = GameServerService::getinstance()->getHandler(js["msgid"].get<int>());
     if (msghandler)
     {
         msghandler(conn, js, time);

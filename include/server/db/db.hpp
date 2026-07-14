@@ -16,10 +16,10 @@ public:
     bool connect();
     bool update(string sql);
     MYSQL_RES* query(string sql);
+    MYSQL* getConnection();
 
 private:
     MYSQL *_conn; 
-
 };
 
 
