@@ -39,6 +39,7 @@ void GameServer::onConnection(const TcpConnectionPtr &conn)
     }
     else
     {
+        GameServerService::getinstance()->usercloseexception(conn);
         conn->shutdown();
         cout << "connection [" << conn->name() << "] is down" << endl;
     }

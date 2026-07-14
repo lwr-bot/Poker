@@ -1,6 +1,7 @@
 #ifndef GameServerService_H
 #define GameServerService_H
 
+#include <mutex>
 #include <muduo/net/TcpConnection.h>
 #include <unordered_map>
 #include <functional>
@@ -26,10 +27,16 @@ public:
     void reg(const TcpConnectionPtr& conn, json& js, Timestamp time);
 
     MsgHandler getHandler(int msgid);
+
+    void usercloseexception(const TcpConnectionPtr& conn);
 private:
     GameServerService();
 
     unordered_map<int, MsgHandler> _msgHandlerMap;
+
+    unordered_map<int, TcpConnectionPtr> _userConnMap;
+
+    mutex _userConnMutex;
 
     usermodel _userModel;
 };

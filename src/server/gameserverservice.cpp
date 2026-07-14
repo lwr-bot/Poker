@@ -1,6 +1,7 @@
 #include "GameServerService.hpp"
 #include "public.hpp"
 
+#include <mutex>
 #include <string>
 #include <muduo/base/Logging.h>
 #include <iostream>
@@ -36,7 +37,7 @@ MsgHandler GameServerService::getHandler(int msgid)
 
 void GameServerService::login(const TcpConnectionPtr& conn, json& js, Timestamp time)
 {
-   int id = js["id"].get<int>();
+   int id = js["id"];
    string password = js["password"];
    User user = _userModel.query(id);
    if(user.getId() == id && user.getPassword() == password){
@@ -48,6 +49,13 @@ void GameServerService::login(const TcpConnectionPtr& conn, json& js, Timestamp 
             conn->send(response.dump());
             return;
         }else{
+
+            {
+                lock_guard<mutex> lock(_userConnMutex);
+                _userConnMap.insert({id, conn});
+            }
+            
+
             user.setState("online");
             _userModel.updateState(user);
 
@@ -90,5 +98,25 @@ void GameServerService::reg(const TcpConnectionPtr& conn, json& js, Timestamp ti
         conn->send(response.dump()); 
     }
 
+}
+
+
+void GameServerService::usercloseexception(const TcpConnectionPtr& conn)
+{
+    User user;
+    {
+        lock_guard<mutex> lock(_userConnMutex);
+        for(auto it = _userConnMap.begin(); it != _userConnMap.end(); it++){
+            if(it->second == conn){
+                user.setId(it->first);
+                _userConnMap.erase(it);
+                break;
+            }
+        }
+    }
+    if(user.getId() != -1){
+        user.setState("offline");
+        _userModel.updateState(user);   
+    }
 }
 
