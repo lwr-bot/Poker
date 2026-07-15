@@ -19,7 +19,7 @@ GameServerService::GameServerService()
 {
     _msgHandlerMap.insert({LOGIN_MSG, std::bind(&GameServerService::login, this, placeholders::_1, placeholders::_2, placeholders::_3)});
     _msgHandlerMap.insert({REG_MSG, std::bind(&GameServerService::reg, this, placeholders::_1, placeholders::_2, placeholders::_3)});
-
+    _msgHandlerMap.insert({POINT_CHAT_MSG, std::bind(&GameServerService::pointchat, this, placeholders::_1, placeholders::_2, placeholders::_3)});
 }
 
 MsgHandler GameServerService::getHandler(int msgid)
@@ -52,7 +52,7 @@ void GameServerService::login(const TcpConnectionPtr& conn, json& js, Timestamp 
 
             {
                 lock_guard<mutex> lock(_userConnMutex);
-                _userConnMap.insert({id, conn});
+                _userOnlineMap.insert({id, conn});
             }
             
 
@@ -64,6 +64,18 @@ void GameServerService::login(const TcpConnectionPtr& conn, json& js, Timestamp 
             response["errno"] = 0;
             response["name"] = user.getName();
             conn->send(response.dump());
+
+            vector<pair<int, string>> offlinemessages = _offlineMsgModel.query(id);
+            if(!offlinemessages.empty()){
+                for(const auto& [senderid, msg] : offlinemessages){
+                    json response;
+                    response["senderid"] = senderid;
+                    response["msg"] = msg;
+                    conn->send(response.dump());
+                }
+                _offlineMsgModel.remove(id);
+            }
+
         }  
     }else{
         json response;
@@ -106,10 +118,10 @@ void GameServerService::usercloseexception(const TcpConnectionPtr& conn)
     User user;
     {
         lock_guard<mutex> lock(_userConnMutex);
-        for(auto it = _userConnMap.begin(); it != _userConnMap.end(); it++){
+        for(auto it = _userOnlineMap.begin(); it != _userOnlineMap.end(); it++){
             if(it->second == conn){
                 user.setId(it->first);
-                _userConnMap.erase(it);
+                _userOnlineMap.erase(it);
                 break;
             }
         }
@@ -120,3 +132,26 @@ void GameServerService::usercloseexception(const TcpConnectionPtr& conn)
     }
 }
 
+void GameServerService::pointchat(const TcpConnectionPtr& conn, json& js, Timestamp time)
+{
+    int targetuserid = js["targetuserid"];
+    int senderid = js["id"];
+    {
+        lock_guard<mutex> lock(_userConnMutex);
+        auto it = _userOnlineMap.find(targetuserid);
+        if(it != _userOnlineMap.end()){
+            json response;
+            response["senderid"] = js["id"];
+            response["msg"] = js["msg"];
+            it->second->send(response.dump());
+        }else{
+            _offlineMsgModel.insert(targetuserid, senderid, js["msg"]);
+            json response;
+            response["msgid"] = POINT_CHAT_MSG_ACK;
+            response["errno"] = 1;
+            response["errmsg"] = "对方不在线";
+            conn->send(response.dump());
+        }
+    }
+
+}

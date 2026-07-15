@@ -6,6 +6,8 @@ enum EnMsgType{
     LOGIN_MSG_ACK,
     REG_MSG,
     REG_MSG_ACK,
+    POINT_CHAT_MSG,
+    POINT_CHAT_MSG_ACK,
 };
 
 

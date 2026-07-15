@@ -6,6 +6,7 @@
 #include <unordered_map>
 #include <functional>
 #include "usermodel.hpp"
+#include "offlinemsgmodel.hpp"
 
 using namespace muduo;
 using namespace muduo::net;
@@ -26,19 +27,25 @@ public:
 
     void reg(const TcpConnectionPtr& conn, json& js, Timestamp time);
 
+    void pointchat(const TcpConnectionPtr& conn, json& js, Timestamp time);
+
     MsgHandler getHandler(int msgid);
 
     void usercloseexception(const TcpConnectionPtr& conn);
+
+
 private:
     GameServerService();
 
     unordered_map<int, MsgHandler> _msgHandlerMap;
 
-    unordered_map<int, TcpConnectionPtr> _userConnMap;
+    unordered_map<int, TcpConnectionPtr> _userOnlineMap;
 
     mutex _userConnMutex;
 
     usermodel _userModel;
+
+    offlinemsgmodel _offlineMsgModel;
 };
 
 #endif
