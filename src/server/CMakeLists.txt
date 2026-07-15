@@ -1,7 +1,8 @@
 aux_source_directory(. SRC_LIST)
 aux_source_directory(./db DB_LIST)
+aux_source_directory(./model MODEL_LIST)
 
-add_executable(GameServer ${SRC_LIST} ${DB_LIST})
+add_executable(GameServer ${SRC_LIST} ${DB_LIST} ${MODEL_LIST})
 
 link_directories(
     /home/iurnewgnail/project/build/release-install-cpp11/lib
