@@ -15,6 +15,8 @@ class usermodel{
 
         // 更新用户的状态信息
         bool updateState(User user);
+
+        void resetState();
 };
 
 

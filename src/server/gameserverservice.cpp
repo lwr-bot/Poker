@@ -20,7 +20,15 @@ GameServerService::GameServerService()
     _msgHandlerMap.insert({LOGIN_MSG, std::bind(&GameServerService::login, this, placeholders::_1, placeholders::_2, placeholders::_3)});
     _msgHandlerMap.insert({REG_MSG, std::bind(&GameServerService::reg, this, placeholders::_1, placeholders::_2, placeholders::_3)});
     _msgHandlerMap.insert({POINT_CHAT_MSG, std::bind(&GameServerService::pointchat, this, placeholders::_1, placeholders::_2, placeholders::_3)});
+    _msgHandlerMap.insert({ADD_FRIEND_MSG, std::bind(&GameServerService::applyaddfriend, this, placeholders::_1, placeholders::_2, placeholders::_3)});
+    _msgHandlerMap.insert({REMOVE_FRIEND_MSG, std::bind(&GameServerService::removefriend, this, placeholders::_1, placeholders::_2, placeholders::_3)});
 }
+
+void GameServerService::reset()
+{
+    _userModel.resetState();
+}
+
 
 MsgHandler GameServerService::getHandler(int msgid)
 {
@@ -154,4 +162,49 @@ void GameServerService::pointchat(const TcpConnectionPtr& conn, json& js, Timest
         }
     }
 
+}
+
+
+void GameServerService::applyaddfriend(const TcpConnectionPtr& conn, json& js, Timestamp time)
+{
+    int friendid = js["targetid"];
+    int userid = js["id"];
+
+    if(_friendModel.querystate(userid, friendid) == 2 || _friendModel.querystate(friendid, userid) == 2){
+        json response;
+        response["msgid"] = ADD_FRIEND_MSG_ACK;
+        response["errno"] = 1;
+        response["errmsg"] = "你们已经是好友了";
+        conn->send(response.dump());
+        return;
+    }
+
+    if(_friendModel.querystate(userid, friendid) == 0 && _friendModel.querystate(friendid, userid) == 0){
+        _friendModel.insertnewfriend(userid, friendid);
+        json response;
+        response["msgid"] = ADD_FRIEND_MSG_ACK;
+        response["errmsg"] = "好友申请已发送，请等待对方同意";
+        conn->send(response.dump());
+    }else if(_friendModel.querystate(userid, friendid) == 0 ){
+        _friendModel.updatefriendstate(friendid, userid);
+        json response;
+        response["msgid"] = ADD_FRIEND_MSG_ACK;
+        response["errmsg"] = "成功";
+        conn->send(response.dump());
+    }else{
+        _friendModel.updatefriendstate(userid, friendid);
+        json response;
+        response["msgid"] = ADD_FRIEND_MSG_ACK;
+        response["errmsg"] = "成功";
+        conn->send(response.dump());
+    }
+
+    return;
+} 
+
+void GameServerService::removefriend(const TcpConnectionPtr& conn, json& js, Timestamp time)
+{
+    int friendid = js["targetid"];
+    int userid = js["id"];
+    _friendModel.removefriend(userid, friendid);
 }

@@ -7,6 +7,7 @@
 #include <functional>
 #include "usermodel.hpp"
 #include "offlinemsgmodel.hpp"
+#include "friendmodel.hpp"
 
 using namespace muduo;
 using namespace muduo::net;
@@ -29,11 +30,15 @@ public:
 
     void pointchat(const TcpConnectionPtr& conn, json& js, Timestamp time);
 
+    void applyaddfriend(const TcpConnectionPtr& conn, json& js, Timestamp time);
+
+    void removefriend(const TcpConnectionPtr& conn, json& js, Timestamp time);
+
     MsgHandler getHandler(int msgid);
 
     void usercloseexception(const TcpConnectionPtr& conn);
 
-
+    void reset();
 private:
     GameServerService();
 
@@ -46,6 +51,8 @@ private:
     usermodel _userModel;
 
     offlinemsgmodel _offlineMsgModel;
+
+    friendmodel _friendModel;
 };
 
 #endif
