@@ -1,0 +1,284 @@
+syntax = "proto3";
+
+package poker.protocol.v1;
+
+enum MessageType {
+  MESSAGE_TYPE_UNSPECIFIED = 0;
+  REGISTER_REQUEST = 1;
+  REGISTER_RESPONSE = 2;
+  LOGIN_REQUEST = 3;
+  LOGIN_RESPONSE = 4;
+  LOGOUT_REQUEST = 5;
+  REFRESH_SESSION_REQUEST = 6;
+  HEARTBEAT = 7;
+  AUTHENTICATE_SESSION_REQUEST = 8;
+  AUTHENTICATE_SESSION_RESPONSE = 9;
+  REFRESH_SESSION_RESPONSE = 10;
+  CREATE_TABLE_REQUEST = 20;
+  CREATE_TABLE_RESPONSE = 21;
+  LIST_TABLES_REQUEST = 22;
+  LIST_TABLES_RESPONSE = 23;
+  JOIN_TABLE_REQUEST = 24;
+  JOIN_TABLE_RESPONSE = 25;
+  LEAVE_TABLE_REQUEST = 26;
+  SIT_DOWN_REQUEST = 40;
+  READY_REQUEST = 41;
+  ACTION_REQUEST = 42;
+  SNAPSHOT_REQUEST = 43;
+  RECONNECT_REQUEST = 44;
+  TABLE_SNAPSHOT = 60;
+  TABLE_EVENT = 61;
+  COMMAND_ACK = 90;
+  ERROR_RESPONSE = 100;
+}
+
+enum ErrorCode {
+  ERROR_CODE_OK = 0;
+  INVALID_MESSAGE = 1;
+  UNAUTHENTICATED = 2;
+  FORBIDDEN = 3;
+  NOT_FOUND = 4;
+  CONFLICT = 5;
+  RATE_LIMITED = 6;
+  OUT_OF_SEQUENCE = 7;
+  INTERNAL_ERROR = 8;
+  SERVICE_UNAVAILABLE = 9;
+  TABLE_RULE_VIOLATION = 10;
+}
+
+enum ActionType {
+  ACTION_TYPE_UNSPECIFIED = 0;
+  FOLD = 1;
+  CHECK = 2;
+  CALL = 3;
+  BET = 4;
+  RAISE = 5;
+  ALL_IN = 6;
+}
+
+enum Street {
+  STREET_UNSPECIFIED = 0;
+  WAITING = 1;
+  PREFLOP = 2;
+  FLOP = 3;
+  TURN = 4;
+  RIVER = 5;
+  SHOWDOWN = 6;
+  SETTLED = 7;
+}
+
+message Card {
+  uint32 rank = 1;
+  uint32 suit = 2;
+}
+
+message RegisterRequest {
+  string username = 1;
+  string password = 2;
+}
+
+message RegisterResponse {
+  uint64 user_id = 1;
+}
+
+message LoginRequest {
+  string username = 1;
+  string password = 2;
+}
+
+message LoginResponse {
+  uint64 user_id = 1;
+  string session_token = 2;
+  int64 wallet_chips = 3;
+  int64 expires_at_unix_ms = 4;
+}
+
+message LogoutRequest {}
+
+message RefreshSessionRequest {
+  string session_token = 1;
+}
+
+message RefreshSessionResponse {
+  string session_token = 1;
+  int64 expires_at_unix_ms = 2;
+}
+
+message Heartbeat {
+  int64 client_time_unix_ms = 1;
+  int64 server_time_unix_ms = 2;
+}
+
+message AuthenticateSessionRequest {
+  string session_token = 1;
+}
+
+message AuthenticateSessionResponse {
+  uint64 user_id = 1;
+  string username = 2;
+  int64 wallet_chips = 3;
+  int64 expires_at_unix_ms = 4;
+}
+
+message TableSummary {
+  uint64 table_id = 1;
+  string name = 2;
+  uint32 seated_players = 3;
+  uint32 max_players = 4;
+  int64 small_blind = 5;
+  int64 big_blind = 6;
+  string game_node_id = 7;
+}
+
+message CreateTableRequest {
+  string name = 1;
+  uint32 max_players = 2;
+  int64 small_blind = 3;
+  int64 big_blind = 4;
+  int64 min_buy_in = 5;
+  int64 max_buy_in = 6;
+}
+
+message CreateTableResponse {
+  TableSummary table = 1;
+  string node_endpoint = 2;
+  string join_ticket = 3;
+}
+
+message ListTablesRequest {
+  uint32 page_size = 1;
+  string page_token = 2;
+}
+
+message ListTablesResponse {
+  repeated TableSummary tables = 1;
+  string next_page_token = 2;
+}
+
+message JoinTableRequest {
+  uint64 table_id = 1;
+}
+
+message JoinTableResponse {
+  string node_endpoint = 1;
+  string join_ticket = 2;
+}
+
+message LeaveTableRequest {
+  uint64 table_id = 1;
+}
+
+message SitDownRequest {
+  uint64 table_id = 1;
+  uint32 seat = 2;
+  int64 buy_in = 3;
+  string join_ticket = 4;
+}
+
+message ReadyRequest {
+  uint64 table_id = 1;
+  bool ready = 2;
+}
+
+message ActionRequest {
+  uint64 table_id = 1;
+  uint64 hand_id = 2;
+  ActionType action = 3;
+  int64 target_street_commitment = 4;
+}
+
+message SnapshotRequest {
+  uint64 table_id = 1;
+  uint64 after_server_sequence = 2;
+}
+
+message ReconnectRequest {
+  uint64 table_id = 1;
+  string session_token = 2;
+  uint64 last_server_sequence = 3;
+}
+
+message PlayerState {
+  uint64 user_id = 1;
+  uint32 seat = 2;
+  int64 stack = 3;
+  int64 street_commitment = 4;
+  int64 hand_commitment = 5;
+  string status = 6;
+  bool ready = 7;
+  bool connected = 8;
+  repeated Card visible_hole_cards = 9;
+}
+
+message TableSnapshot {
+  uint64 table_id = 1;
+  uint64 hand_id = 2;
+  uint64 server_sequence = 3;
+  Street street = 4;
+  uint64 dealer_user_id = 5;
+  uint64 acting_user_id = 6;
+  int64 current_bet = 7;
+  int64 minimum_raise = 8;
+  int64 pot = 9;
+  repeated Card board = 10;
+  repeated PlayerState players = 11;
+}
+
+message TableEvent {
+  uint64 table_id = 1;
+  uint64 hand_id = 2;
+  uint64 server_sequence = 3;
+  string event_type = 4;
+  bytes event_payload = 5;
+}
+
+message ErrorResponse {
+  ErrorCode code = 1;
+  string message = 2;
+  uint64 related_request_id = 3;
+}
+
+message CommandAck {
+  bool accepted = 1;
+  string message = 2;
+}
+
+message Envelope {
+  uint32 protocol_version = 1;
+  uint64 request_id = 2;
+  uint64 client_sequence = 3;
+  MessageType message_type = 4;
+  string session_token = 5;
+  uint64 table_id = 6;
+  uint64 hand_id = 7;
+  uint64 server_sequence = 8;
+
+  oneof body {
+    RegisterRequest register_request = 20;
+    RegisterResponse register_response = 21;
+    LoginRequest login_request = 22;
+    LoginResponse login_response = 23;
+    LogoutRequest logout_request = 24;
+    RefreshSessionRequest refresh_session_request = 25;
+    Heartbeat heartbeat = 26;
+    AuthenticateSessionRequest authenticate_session_request = 27;
+    AuthenticateSessionResponse authenticate_session_response = 28;
+    RefreshSessionResponse refresh_session_response = 29;
+    CreateTableRequest create_table_request = 30;
+    CreateTableResponse create_table_response = 31;
+    ListTablesRequest list_tables_request = 32;
+    ListTablesResponse list_tables_response = 33;
+    JoinTableRequest join_table_request = 34;
+    JoinTableResponse join_table_response = 35;
+    LeaveTableRequest leave_table_request = 36;
+    SitDownRequest sit_down_request = 40;
+    ReadyRequest ready_request = 41;
+    ActionRequest action_request = 42;
+    SnapshotRequest snapshot_request = 43;
+    ReconnectRequest reconnect_request = 44;
+    TableSnapshot table_snapshot = 50;
+    TableEvent table_event = 51;
+    CommandAck command_ack = 52;
+    ErrorResponse error_response = 60;
+  }
+}

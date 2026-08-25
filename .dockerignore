@@ -1,0 +1,14 @@
+.git
+.github
+.vscode
+.agents
+.env
+build
+bin
+*.o
+*.obj
+*.exe
+thirdparty
+benchmarks/results/*.json
+__pycache__
+*.pyc

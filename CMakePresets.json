@@ -1,0 +1,101 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 20,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "dev",
+      "displayName": "Development",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/dev",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "POKER_BUILD_TESTS": "ON",
+        "POKER_BUILD_SERVER": "OFF"
+      }
+    },
+    {
+      "name": "release",
+      "displayName": "Release server",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "POKER_BUILD_TESTS": "ON",
+        "POKER_BUILD_SERVER": "ON"
+      }
+    },
+    {
+      "name": "asan",
+      "displayName": "ASan and UBSan",
+      "inherits": "dev",
+      "binaryDir": "${sourceDir}/build/asan",
+      "cacheVariables": {
+        "POKER_ENABLE_SANITIZERS": "ON"
+      }
+    },
+    {
+      "name": "client",
+      "displayName": "Qt desktop client",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/client",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "POKER_BUILD_TESTS": "OFF",
+        "POKER_BUILD_SERVER": "OFF",
+        "POKER_BUILD_CLIENT": "ON"
+      }
+    },
+    {
+      "name": "tsan",
+      "displayName": "ThreadSanitizer",
+      "inherits": "dev",
+      "binaryDir": "${sourceDir}/build/tsan",
+      "cacheVariables": {
+        "POKER_ENABLE_TSAN": "ON"
+      }
+    },
+    {
+      "name": "coverage",
+      "displayName": "Domain coverage",
+      "inherits": "dev",
+      "binaryDir": "${sourceDir}/build/coverage",
+      "cacheVariables": {
+        "POKER_ENABLE_COVERAGE": "ON"
+      }
+    }
+  ],
+  "buildPresets": [
+    { "name": "dev", "configurePreset": "dev" },
+    { "name": "release", "configurePreset": "release" },
+    { "name": "asan", "configurePreset": "asan" },
+    { "name": "tsan", "configurePreset": "tsan" },
+    { "name": "client", "configurePreset": "client" },
+    { "name": "coverage", "configurePreset": "coverage" }
+  ],
+  "testPresets": [
+    {
+      "name": "dev",
+      "configurePreset": "dev",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "asan",
+      "configurePreset": "asan",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "tsan",
+      "configurePreset": "tsan",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "coverage",
+      "configurePreset": "coverage",
+      "output": { "outputOnFailure": true }
+    }
+  ]
+}

@@ -1,0 +1,88 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install build tools
+        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build g++
+      - name: Configure
+        run: cmake --preset dev
+      - name: Build
+        run: cmake --build --preset dev --parallel
+      - name: Test
+        run: ctest --preset dev
+
+  sanitizers:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install build tools
+        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build g++
+      - name: Configure
+        run: cmake --preset asan
+      - name: Build
+        run: cmake --build --preset asan --parallel
+      - name: Test
+        env:
+          ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
+          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+        run: ctest --preset asan
+
+  thread-sanitizer:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install build tools
+        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build g++
+      - name: Configure
+        run: cmake --preset tsan
+      - name: Build
+        run: cmake --build --preset tsan --parallel
+      - name: Test
+        env:
+          TSAN_OPTIONS: halt_on_error=1:second_deadlock_stack=1
+        run: ctest --preset tsan
+
+  fuzz-smoke:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install fuzz build tools
+        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build clang libprotobuf-dev protobuf-compiler
+      - name: Configure
+        run: cmake -S . -B build/fuzz -G Ninja -DCMAKE_CXX_COMPILER=clang++ -DPOKER_BUILD_TESTS=OFF -DPOKER_BUILD_FUZZERS=ON
+      - name: Build
+        run: cmake --build build/fuzz --parallel
+      - name: Fuzz smoke test
+        run: ./build/fuzz/fuzz/protocol_fuzzer -max_total_time=20 -max_len=65536
+
+  domain-coverage:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install coverage tools
+        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build g++ gcovr
+      - name: Configure and test
+        run: |
+          cmake --preset coverage
+          cmake --build --preset coverage --parallel
+          ctest --preset coverage
+      - name: Enforce domain line coverage
+        run: gcovr --root . --filter 'src/poker/domain/' --exclude-unreachable-branches --fail-under-line 85 --xml-pretty --output build/coverage/domain-coverage.xml
+      - uses: actions/upload-artifact@v4
+        with:
+          name: domain-coverage
+          path: build/coverage/domain-coverage.xml
+
+  full-server-image:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and test complete server image
+        run: docker build --target runtime --tag poker-server:ci .

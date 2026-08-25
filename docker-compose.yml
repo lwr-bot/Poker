@@ -1,0 +1,169 @@
+services:
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_DATABASE: poker
+      MYSQL_USER: poker
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?set MYSQL_PASSWORD in .env}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?set MYSQL_ROOT_PASSWORD in .env}
+    command: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_0900_ai_ci"]
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./deploy/mysql/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  redis:
+    image: redis:8.0-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  poker-server:
+    profiles: ["single"]
+    build:
+      context: .
+      target: runtime
+    env_file: .env
+    environment:
+      POKER_ROLE: standalone
+      POKER_NODE_ID: game-1
+      POKER_PUBLIC_ENDPOINT: 127.0.0.1:6000
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    expose:
+      - "7000"
+      - "9100"
+    ports:
+      - "9100:9100"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://127.0.0.1:9100/health/ready"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  nginx:
+    profiles: ["single"]
+    image: nginx:1.29.8
+    depends_on:
+      - poker-server
+    ports:
+      - "6000:6000"
+    volumes:
+      - ./deploy/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    restart: unless-stopped
+
+  poker-lobby:
+    profiles: ["cluster"]
+    build:
+      context: .
+      target: runtime
+    env_file: .env
+    environment:
+      POKER_ROLE: lobby
+      POKER_NODE_ID: lobby-1
+      POKER_PUBLIC_ENDPOINT: 127.0.0.1:6000
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    expose: ["7000", "9100"]
+    ports:
+      - "9110:9100"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://127.0.0.1:9100/health/ready"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  poker-game-a:
+    profiles: ["cluster"]
+    build:
+      context: .
+      target: runtime
+    env_file: .env
+    environment:
+      POKER_ROLE: game
+      POKER_NODE_ID: game-a
+      POKER_PUBLIC_ENDPOINT: 127.0.0.1:7001
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "7001:7000"
+      - "9111:9100"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://127.0.0.1:9100/health/ready"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  poker-game-b:
+    profiles: ["cluster"]
+    build:
+      context: .
+      target: runtime
+    env_file: .env
+    environment:
+      POKER_ROLE: game
+      POKER_NODE_ID: game-b
+      POKER_PUBLIC_ENDPOINT: 127.0.0.1:7002
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "7002:7000"
+      - "9112:9100"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://127.0.0.1:9100/health/ready"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  nginx-cluster:
+    profiles: ["cluster"]
+    image: nginx:1.29.8
+    depends_on:
+      poker-lobby:
+        condition: service_healthy
+    ports:
+      - "6000:6000"
+    volumes:
+      - ./deploy/nginx/nginx-cluster.conf:/etc/nginx/nginx.conf:ro
+    restart: unless-stopped
+
+  prometheus:
+    profiles: ["monitoring"]
+    image: prom/prometheus:v3.12.0
+    command: ["--config.file=/etc/prometheus/prometheus.yml"]
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./deploy/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    restart: unless-stopped
+
+volumes:
+  mysql-data:
+  redis-data:
