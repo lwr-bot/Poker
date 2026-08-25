@@ -231,7 +231,8 @@ async def play_table(number: int,
             latencies_ms.append((time.perf_counter() - started) * 1000.0)
             counters.actions += 1
             current = response.table_snapshot
-    except (OSError, asyncio.TimeoutError, asyncio.IncompleteReadError, ProtocolError):
+    except (OSError, asyncio.TimeoutError, asyncio.IncompleteReadError, ProtocolError) as error:
+        print(f"table {number} failed: {type(error).__name__}: {error}")
         counters.errors += 1
     finally:
         for bot in (first, second):

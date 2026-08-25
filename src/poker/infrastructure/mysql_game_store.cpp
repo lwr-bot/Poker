@@ -776,7 +776,7 @@ StorageError MySqlGameStore::beginHand(const HandStartRecord& hand) {
 
         GameStatement update_seat(
             connection,
-            "UPDATE table_seats SET hand_start_stack=? WHERE table_id=? AND user_id=? AND stack=?");
+            "UPDATE table_seats SET hand_start_stack=?,version=version+1 WHERE table_id=? AND user_id=? AND stack=?");
         auto expected_stack = player.start_stack;
         auto seat_table_id = hand.table_id;
         std::array<MYSQL_BIND, 4> seat_binds{};
