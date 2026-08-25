@@ -18,6 +18,7 @@
 #include <mutex>
 #include <optional>
 #include <string>
+#include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
@@ -64,6 +65,7 @@ private:
         ~TableOperation();
         TableOperation(const TableOperation&) = delete;
         TableOperation& operator=(const TableOperation&) = delete;
+        void finish() noexcept;
 
     private:
         ProtocolService* owner_;
@@ -142,7 +144,7 @@ private:
     Schedule schedule_;
     application::IdempotencyCache idempotency_;
     std::mutex table_operations_mutex_;
-    std::unordered_set<std::uint64_t> active_table_operations_;
+    std::unordered_map<std::uint64_t, std::uint64_t> latest_timeout_sequences_;
 };
 
 }  // namespace poker::server

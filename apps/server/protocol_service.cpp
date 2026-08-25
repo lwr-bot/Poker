@@ -182,8 +182,14 @@ ProtocolService::TableOperation::TableOperation(ProtocolService* owner,
     : owner_(owner), table_id_(table_id) {}
 
 ProtocolService::TableOperation::~TableOperation() {
+    finish();
+}
+
+void ProtocolService::TableOperation::finish() noexcept {
     if (owner_ != nullptr) {
-        owner_->finishTableOperation(table_id_);
+        auto* owner = owner_;
+        owner_ = nullptr;
+        owner->finishTableOperation(table_id_);
     }
 }
 
@@ -882,6 +888,7 @@ void ProtocolService::handle(const Envelope& request,
                 return;
             }
             if (!body.ready()) {
+                operation->finish();
                 replyWithCurrentSnapshot(body.table_id(), user_id, request_copy, send, false);
                 return;
             }
@@ -895,6 +902,7 @@ void ProtocolService::handle(const Envelope& request,
                     return;
                 }
                 if (start_error != domain::TableError::ok) {
+                    operation->finish();
                     replyWithCurrentSnapshot(body.table_id(), user_id, request_copy, send, true);
                     return;
                 }
@@ -922,6 +930,7 @@ void ProtocolService::handle(const Envelope& request,
                                              "hand start could not be persisted", send, user_id);
                                         return;
                                     }
+                                    operation->finish();
                                     replyWithCurrentSnapshot(body.table_id(), user_id,
                                                              request_copy, send, true);
                                 })) {
@@ -1004,10 +1013,11 @@ void ProtocolService::handle(const Envelope& request,
                                 return;
                             }
                         }
-                        reply(user_id, request_copy,
-                              snapshotEnvelope(request_copy, snapshot), send);
-                        broadcastSnapshot(body.table_id(), snapshot);
                         scheduleTimeout(body.table_id(), snapshot);
+                        operation->finish();
+                        reply(user_id, request_copy,
+                            snapshotEnvelope(request_copy, snapshot), send);
+                        broadcastSnapshot(body.table_id(), snapshot);
                     })) {
                 abortTableAndNotify(body.table_id(), audit,
                                    "storage queue is full", false);
@@ -1441,81 +1451,188 @@ void ProtocolService::retryRefund(std::uint64_t table_id,
     });
 }
 
-void ProtocolService::scheduleTimeout(std::uint64_t table_id,
-                                      const domain::TableSnapshot& snapshot) {
-    if (!schedule_ || !snapshot.acting_player.has_value()) {
+void ProtocolService::scheduleTimeout(
+    std::uint64_t table_id,
+    const domain::TableSnapshot& snapshot) {
+    if (!schedule_) {
         return;
     }
-    const auto acting_player = *snapshot.acting_player;
+
     const auto expected_sequence = snapshot.server_sequence;
-    const auto actor = std::find_if(snapshot.players.begin(), snapshot.players.end(),
-                                    [acting_player](const auto& player) {
-                                        return player.id == acting_player;
-                                    });
-    const auto timeout_action = actor != snapshot.players.end()
-                                    && actor->street_commitment == snapshot.current_bet
-                                ? domain::ActionType::check
-                                : domain::ActionType::fold;
-    schedule_(std::chrono::milliseconds(config_.action_timeout_ms),
-              [this, table_id, acting_player, expected_sequence, timeout_action] {
-        const auto operation = beginTableOperation(table_id);
-        if (!operation) {
+    {
+        std::lock_guard<std::mutex> lock(table_operations_mutex_);
+        auto [position, inserted] =
+            latest_timeout_sequences_.try_emplace(table_id, expected_sequence);
+
+        if (!inserted && expected_sequence < position->second) {
             return;
         }
-        rooms_.onActionTimeout(table_id,
-                               acting_player,
-                               expected_sequence,
-                               [this, table_id, acting_player, expected_sequence,
-                                timeout_action, operation](domain::ActionResult result,
-                                                           domain::TableSnapshot after,
-                                                           domain::TableSnapshot audit) {
-            if (!result) {
-                return;
+
+        position->second = expected_sequence;
+    }
+
+    if (!snapshot.acting_player.has_value()) {
+        return;
+    }
+
+    const auto acting_player = *snapshot.acting_player;
+    const auto actor = std::find_if(
+        snapshot.players.begin(),
+        snapshot.players.end(),
+        [acting_player](const auto& player) {
+            return player.id == acting_player;
+        });
+
+    const auto timeout_action =
+        actor != snapshot.players.end()
+                && actor->street_commitment == snapshot.current_bet
+            ? domain::ActionType::check
+            : domain::ActionType::fold;
+
+    schedule_(
+        std::chrono::milliseconds(config_.action_timeout_ms),
+        [this,
+         table_id,
+         acting_player,
+         expected_sequence,
+         timeout_action] {
+            {
+                std::lock_guard<std::mutex> lock(table_operations_mutex_);
+                const auto latest =
+                    latest_timeout_sequences_.find(table_id);
+
+                if (latest == latest_timeout_sequences_.end()
+                    || latest->second != expected_sequence) {
+                    return;
+                }
             }
-            storage::HandActionRecord action;
-            action.hand_id = persistentHandId(table_id, audit.hand_id);
-            action.sequence = result.server_sequence;
-            action.request_id = (std::uint64_t{1} << 63U) | expected_sequence;
-            action.user_id = acting_player;
-            action.street = result.action_street;
-            action.action = timeout_action;
-            const auto settlement = audit.street == domain::Street::settled
-                                        ? std::optional<storage::HandSettlementRecord>{
-                                              handSettlement(table_id, audit, result.awards)}
-                                        : std::nullopt;
-            const auto queued = storage_executor_.post(
-                [this, table_id, action, settlement, after, audit, operation] {
-                        static_cast<void>(operation);
-                        const auto action_stored = game_store_.appendAction(action);
-                        if (action_stored != storage::StorageError::ok
-                            && action_stored != storage::StorageError::duplicate) {
-                            metrics_.storageFailure();
-                            abortTableAndNotify(table_id, audit,
-                                               "timeout action history could not be persisted",
-                                               true);
-                            return;
-                        }
-                        if (settlement.has_value()) {
-                            const auto settled = game_store_.settleHand(*settlement);
-                            if (settled != storage::StorageError::ok
-                                && settled != storage::StorageError::duplicate) {
-                                metrics_.storageFailure();
-                                abortTableAndNotify(table_id, audit,
-                                                   "timeout settlement could not be committed",
-                                                   true);
+
+            rooms_.auditSnapshot(
+                table_id,
+                [this,
+                 table_id,
+                 acting_player,
+                 expected_sequence,
+                 timeout_action](
+                    domain::TableError snapshot_error,
+                    domain::TableSnapshot current) {
+                    if (snapshot_error != domain::TableError::ok
+                        || current.server_sequence != expected_sequence
+                        || !current.acting_player.has_value()
+                        || *current.acting_player != acting_player) {
+                        return;
+                    }
+
+                    const auto operation =
+                        beginTableOperation(table_id);
+
+                    if (!operation) {
+                        return;
+                    }
+
+                    rooms_.onActionTimeout(
+                        table_id,
+                        acting_player,
+                        expected_sequence,
+                        [this,
+                         table_id,
+                         acting_player,
+                         expected_sequence,
+                         timeout_action,
+                         operation](
+                            domain::ActionResult result,
+                            domain::TableSnapshot after,
+                            domain::TableSnapshot audit) {
+                            if (!result) {
                                 return;
                             }
-                        }
-                        broadcastSnapshot(table_id, after);
-                        scheduleTimeout(table_id, after);
-                    });
-            if (!queued) {
-                abortTableAndNotify(table_id, audit,
-                                   "storage queue is full after timeout action",
-                                   false);
-            }
+
+                            storage::HandActionRecord action;
+                            action.hand_id =
+                                persistentHandId(table_id, audit.hand_id);
+                            action.sequence = result.server_sequence;
+                            action.request_id =
+                                (std::uint64_t{1} << 63U)
+                                | expected_sequence;
+                            action.user_id = acting_player;
+                            action.street = result.action_street;
+                            action.action = timeout_action;
+
+                            const auto settlement =
+                                audit.street == domain::Street::settled
+                                    ? std::optional<
+                                          storage::HandSettlementRecord>{
+                                          handSettlement(
+                                              table_id,
+                                              audit,
+                                              result.awards)}
+                                    : std::nullopt;
+
+                            const auto queued =
+                                storage_executor_.post(
+                                    [this,
+                                     table_id,
+                                     action,
+                                     settlement,
+                                     after,
+                                     audit,
+                                     operation] {
+                                        const auto action_stored =
+                                            game_store_.appendAction(action);
+
+                                        if (action_stored
+                                                != storage::StorageError::ok
+                                            && action_stored
+                                                != storage::StorageError::
+                                                       duplicate) {
+                                            metrics_.storageFailure();
+                                            abortTableAndNotify(
+                                                table_id,
+                                                audit,
+                                                "timeout action history "
+                                                "could not be persisted",
+                                                true);
+                                            return;
+                                        }
+
+                                        if (settlement.has_value()) {
+                                            const auto settled =
+                                                game_store_.settleHand(
+                                                    *settlement);
+
+                                            if (settled
+                                                    != storage::StorageError::ok
+                                                && settled
+                                                    != storage::StorageError::
+                                                           duplicate) {
+                                                metrics_.storageFailure();
+                                                abortTableAndNotify(
+                                                    table_id,
+                                                    audit,
+                                                    "timeout settlement "
+                                                    "could not be committed",
+                                                    true);
+                                                return;
+                                            }
+                                        }
+
+                                        scheduleTimeout(table_id, after);
+                                        operation->finish();
+                                        broadcastSnapshot(table_id, after);
+                                    });
+
+                            if (!queued) {
+                                abortTableAndNotify(
+                                    table_id,
+                                    audit,
+                                    "storage queue is full after "
+                                    "timeout action",
+                                    false);
+                                operation->finish();
+                            }
+                        });
+                });
         });
-    });
 }
 
 std::int64_t ProtocolService::nowUnixMs() {

@@ -23,6 +23,7 @@ except ImportError as error:
 class ProtocolError(RuntimeError):
     pass
 
+BUSY_PERSISTENCE_MESSAGE = "another table command is awaiting persistence"
 
 class Connection:
     def __init__(self, host: str, port: int) -> None:
@@ -63,7 +64,9 @@ class Connection:
                 self.latest_snapshot = response.table_snapshot
             if response.request_id == expected:
                 if response.message_type == pb.ERROR_RESPONSE:
-                    raise ProtocolError(response.error_response.message)
+                    request_name = pb.MessageType.Name(message.message_type)
+                    raise ProtocolError(
+                        f"{request_name}: {response.error_response.message}")
                 return response
 
     async def close(self) -> None:
@@ -88,11 +91,29 @@ class Bot:
 
 @dataclass
 class Counters:
+    busy_retries: int = 0
     tables_ready: int = 0
     actions: int = 0
     hands: int = 0
     errors: int = 0
 
+async def request_with_busy_retry(connection: Connection,
+                                  message: pb.Envelope,
+                                  counters: Counters,
+                                  max_attempts: int = 25) -> pb.Envelope:
+    for attempt in range(max_attempts):
+        try:
+            return await connection.request(message)
+        except ProtocolError as error:
+            if (BUSY_PERSISTENCE_MESSAGE not in str(error)
+                    or attempt + 1 == max_attempts):
+                raise
+
+            counters.busy_retries += 1
+            await asyncio.sleep(min(0.002 * (attempt + 1), 0.020))
+
+    raise AssertionError(
+        "busy retry loop exhausted without returning or raising")
 
 async def create_bot(index: int, prefix: str, args: argparse.Namespace) -> Bot:
     connection = Connection(args.host, args.port)
@@ -169,8 +190,8 @@ async def setup_table(number: int,
     sit_second.sit_down_request.seat = 1
     sit_second.sit_down_request.buy_in = 1000
     sit_second.sit_down_request.join_ticket = joined.join_table_response.join_ticket
-    await first_game.request(sit_first)
-    await second_game.request(sit_second)
+    await request_with_busy_retry(first_game, sit_first, counters)
+    await request_with_busy_retry(second_game, sit_second, counters)
 
     ready_first = pb.Envelope(message_type=pb.READY_REQUEST)
     ready_first.ready_request.table_id = table_id
@@ -178,8 +199,8 @@ async def setup_table(number: int,
     ready_second = pb.Envelope(message_type=pb.READY_REQUEST)
     ready_second.ready_request.table_id = table_id
     ready_second.ready_request.ready = True
-    await first_game.request(ready_first)
-    response = await second_game.request(ready_second)
+    await request_with_busy_retry(first_game, ready_first, counters)
+    response = await request_with_busy_retry(second_game, ready_second, counters)
     second_game.latest_snapshot = response.table_snapshot
     counters.tables_ready += 1
     counters.hands += 1
@@ -208,7 +229,7 @@ async def play_table(number: int,
                     ready = pb.Envelope(message_type=pb.READY_REQUEST)
                     ready.ready_request.table_id = table_id
                     ready.ready_request.ready = True
-                    response = await bot.game.request(ready)
+                    response = await request_with_busy_retry(bot.game, ready, counters)
                     current = response.table_snapshot
                 counters.hands += 1
                 continue
@@ -227,7 +248,7 @@ async def play_table(number: int,
                                              if player.street_commitment < current.current_bet
                                              else pb.CHECK)
             started = time.perf_counter()
-            response = await actor.request(action)
+            response = await request_with_busy_retry(actor, action, counters)
             latencies_ms.append((time.perf_counter() - started) * 1000.0)
             counters.actions += 1
             current = response.table_snapshot
@@ -265,6 +286,7 @@ async def run(args: argparse.Namespace) -> dict[str, object]:
         "tables_ready": counters.tables_ready,
         "hands_started": counters.hands,
         "actions": counters.actions,
+        "busy_retries": counters.busy_retries,
         "errors": counters.errors,
         "elapsed_seconds": round(elapsed, 3),
         "actions_per_second": round(counters.actions / elapsed, 3) if elapsed else 0,
