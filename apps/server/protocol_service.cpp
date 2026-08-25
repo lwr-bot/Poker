@@ -813,7 +813,7 @@ void ProtocolService::handle(const Envelope& request,
                                     table_id, user_id, rollback_key);
                                 if (!rolled_back) {
                                     domain::TableSnapshot audit;
-                                    domain::PlayerSnapshot affected;
+                                    domain::PlayerView affected;
                                     affected.id = user_id;
                                     audit.players.push_back(std::move(affected));
                                     abortTableAndNotify(
@@ -823,7 +823,7 @@ void ProtocolService::handle(const Envelope& request,
                             });
                             if (!rollback_queued) {
                                 domain::TableSnapshot audit;
-                                domain::PlayerSnapshot affected;
+                                domain::PlayerView affected;
                                 affected.id = user_id;
                                 audit.players.push_back(std::move(affected));
                                 abortTableAndNotify(body.table_id(), audit,
