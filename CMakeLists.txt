@@ -56,6 +56,15 @@ else()
     target_compile_options(poker_domain PRIVATE -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
 endif()
 
+if(POKER_BUILD_SERVER)
+    find_path(SODIUM_INCLUDE_DIR sodium.h REQUIRED)
+    find_library(SODIUM_LIBRARY NAMES sodium REQUIRED)
+
+    target_include_directories(poker_domain PRIVATE ${SODIUM_INCLUDE_DIR})
+    target_link_libraries(poker_domain PRIVATE ${SODIUM_LIBRARY})
+    target_compile_definitions(poker_domain PRIVATE POKER_USE_SODIUM_RANDOM=1)
+endif()
+
 add_library(poker_net
     src/poker/net/length_field_codec.cpp
     src/poker/net/token_bucket.cpp

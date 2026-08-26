@@ -59,6 +59,7 @@ void PokerTcpServer::push(storage::UserId user_id, ProtocolService::Envelope env
 
 void PokerTcpServer::onConnection(const muduo::net::TcpConnectionPtr& connection) {
     if (connection->connected()) {
+        connection->setTcpNoDelay(true);
         metrics_.connectionOpened();
         connection->setHighWaterMarkCallback(
             [this](const auto& slow_connection, std::size_t buffered_bytes) {

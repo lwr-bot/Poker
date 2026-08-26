@@ -1,0 +1,17 @@
+{
+  "target": "127.0.0.1:6000",
+  "requested_tables": 75,
+  "tables_ready": 75,
+  "hands_started": 26876,
+  "actions": 214717,
+  "busy_retries": 3,
+  "errors": 0,
+  "elapsed_seconds": 131.237,
+  "actions_per_second": 1636.099,
+  "latency_ms": {
+    "p50": 36.175,
+    "p95": 50.59,
+    "p99": 69.465,
+    "max": 209.436
+  }
+}

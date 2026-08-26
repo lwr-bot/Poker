@@ -144,6 +144,7 @@ private:
     Schedule schedule_;
     application::IdempotencyCache idempotency_;
     std::mutex table_operations_mutex_;
+    std::unordered_set<std::uint64_t> active_table_operations_;
     std::unordered_map<std::uint64_t, std::uint64_t> latest_timeout_sequences_;
 };
 

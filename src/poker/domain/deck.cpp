@@ -1,24 +1,65 @@
 #include "poker/domain/deck.hpp"
 
+#ifdef POKER_USE_SODIUM_RANDOM
+#include <sodium.h>
+#endif
+
 #include <limits>
 #include <random>
 #include <stdexcept>
 
 namespace poker::domain {
 
-std::uint64_t SystemRandomSource::uniform(std::uint64_t exclusive_upper_bound) {
+std::uint64_t SystemRandomSource::uniform(
+    std::uint64_t exclusive_upper_bound) {
     if (exclusive_upper_bound == 0) {
-        throw std::invalid_argument("random upper bound must be positive");
+        throw std::invalid_argument(
+            "random upper bound must be positive");
     }
 
-    static thread_local std::random_device device;
-    const auto maximum = std::numeric_limits<std::uint64_t>::max();
-    const auto limit = maximum - (maximum % exclusive_upper_bound);
+#ifdef POKER_USE_SODIUM_RANDOM
+    static const bool sodium_ready = [] {
+        if (sodium_init() < 0) {
+            throw std::runtime_error(
+                "libsodium initialization failed");
+        }
+        return true;
+    }();
+    static_cast<void>(sodium_ready);
+
+    if (exclusive_upper_bound
+        <= std::numeric_limits<std::uint32_t>::max()) {
+        return randombytes_uniform(
+            static_cast<std::uint32_t>(exclusive_upper_bound));
+    }
+
+    const auto maximum =
+        std::numeric_limits<std::uint64_t>::max();
+    const auto limit =
+        maximum - (maximum % exclusive_upper_bound);
+
     std::uint64_t value = 0;
     do {
-        value = (static_cast<std::uint64_t>(device()) << 32U) ^ device();
+        randombytes_buf(&value, sizeof(value));
     } while (value >= limit);
+
     return value % exclusive_upper_bound;
+#else
+    static thread_local std::random_device device;
+    const auto maximum =
+        std::numeric_limits<std::uint64_t>::max();
+    const auto limit =
+        maximum - (maximum % exclusive_upper_bound);
+
+    std::uint64_t value = 0;
+    do {
+        value =
+            (static_cast<std::uint64_t>(device()) << 32U)
+            ^ device();
+    } while (value >= limit);
+
+    return value % exclusive_upper_bound;
+#endif
 }
 
 DeterministicRandomSource::DeterministicRandomSource(std::uint64_t seed)
