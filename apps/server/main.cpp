@@ -82,6 +82,7 @@ int main() {
             std::chrono::milliseconds(config.node_failure_grace_ms));
         poker::application::RoomManager rooms(config.logic_shards);
         poker::application::BlockingExecutor storage_executor(config.mysql.pool_size);
+        poker::application::BlockingExecutor coordination_executor(1, 1);
         poker::observability::MetricsRegistry metrics;
         std::atomic<bool> coordination_healthy{false};
         std::atomic<bool> database_healthy{false};
@@ -113,8 +114,8 @@ int main() {
 
         const auto heartbeat = [&registry, &config, &rooms, &metrics,
                                 &coordination_healthy, &database_healthy,
-                                &storage_executor, &mysql_pool, &games] {
-            if (!storage_executor.post([&registry, &config, &rooms, &metrics,
+                                &coordination_executor, &mysql_pool, &games] {
+            if (!coordination_executor.post([&registry, &config, &rooms, &metrics,
                                         &coordination_healthy, &database_healthy,
                                         &mysql_pool, &games] {
                     bool mysql_healthy = mysql_pool.ping();
@@ -158,8 +159,8 @@ int main() {
         heartbeat();
         loop.runEvery(2.0, heartbeat);
         if (config.role == poker::config::ServerRole::lobby) {
-            loop.runEvery(5.0, [&storage_executor, &failure_reaper, &metrics] {
-                if (!storage_executor.post([&failure_reaper, &metrics] {
+            loop.runEvery(5.0, [&coordination_executor, &failure_reaper, &metrics] {
+                if (!coordination_executor.post([&failure_reaper, &metrics] {
                         const auto result = failure_reaper.sweep();
                         for (const auto table_id : result.refunded_tables) {
                             LOG_WARN << "refunded table after owner heartbeat expired table=" << table_id;
@@ -190,6 +191,7 @@ int main() {
         health_server.start();
         server.start();
         loop.loop();
+        coordination_executor.stop();
         rooms.stop();
         storage_executor.stop();
     } catch (const std::exception& error) {
