@@ -60,6 +60,9 @@ class Connection:
             raw = await asyncio.wait_for(self.reader.readexactly(size), timeout=10)
             response = pb.Envelope()
             response.ParseFromString(raw)
+            if response.message_type == pb.ERROR_RESPONSE and response.request_id == 0:
+                raise ProtocolError(
+                    f"CONNECTION: {response.error_response.message}")
             if response.message_type == pb.TABLE_SNAPSHOT:
                 self.latest_snapshot = response.table_snapshot
             if response.request_id == expected:
@@ -247,6 +250,8 @@ async def play_table(number: int,
             action.action_request.action = (pb.CALL
                                              if player.street_commitment < current.current_bet
                                              else pb.CHECK)
+            if args.action_delay_ms > 0:
+                await asyncio.sleep(args.action_delay_ms / 1000.0)
             started = time.perf_counter()
             response = await request_with_busy_retry(actor, action, counters)
             latencies_ms.append((time.perf_counter() - started) * 1000.0)
@@ -306,10 +311,14 @@ def arguments() -> argparse.Namespace:
     parser.add_argument("--tables", type=int, default=10)
     parser.add_argument("--duration", type=float, default=60)
     parser.add_argument("--setup-concurrency", type=int, default=10)
+    parser.add_argument("--action-delay-ms", type=float, default=0.0)
     parser.add_argument("--output", type=Path)
     result = parser.parse_args()
-    if result.tables <= 0 or result.duration <= 0 or result.setup_concurrency <= 0:
-        parser.error("tables, duration, and setup-concurrency must be positive")
+    if (result.tables <= 0 or result.duration <= 0
+        or result.setup_concurrency <= 0 or result.action_delay_ms < 0):
+        parser.error(
+            "tables, duration, and setup-concurrency must be positive; "
+            "action-delay-ms must be non-negative")
     return result
 
 

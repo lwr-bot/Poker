@@ -89,16 +89,7 @@ std::vector<NodeInfo> HiredisNodeRegistry::healthyNodes() {
         if (parsed.has_value()) {
             result.push_back(*parsed);
         }
-    }
-    std::sort(result.begin(), result.end(), [](const auto& lhs, const auto& rhs) {
-        if (lhs.active_tables != rhs.active_tables) {
-            return lhs.active_tables < rhs.active_tables;
-        }
-        if (lhs.connections != rhs.connections) {
-            return lhs.connections < rhs.connections;
-        }
-        return lhs.node_id < rhs.node_id;
-    });
+    };
     return result;
 }
 
